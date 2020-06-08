@@ -9,31 +9,35 @@
 use types::IndexedVal;
 
 pub struct ShakeElement {
+	element_id: usize, // the element's initial location
 	val: i32, 
 	sorted_loc: Option<usize>,
-	initial_loc: usize,
 	unsorted_locs: Vec<usize>, //After 1 swap is at index 0, after 2 at 1...
 }
-#[derive(Clone)] // !!! Clone is derived to make cloning PartitionSeparator easier. Do it without deriving clone here for style
+
+// stores a pivot of a partition
+	// records how many elements were placed above/below the pivot before the pivot changed or the partition was fully sub-partitioned
+#[derive(Clone)]
 pub struct Pivot {
-	num_previous: usize,
+	element_id: usize,
+	num_previous: usize, // how many pivots came previously when sorting the partition
 	num_lower: usize,
 	num_higher: usize
 }
+
 #[derive(Clone)]
 pub struct PartitionSeparator {
 	idx: usize,
 	lower_size: usize,
 	upper_size: usize,
-	pivots: Vec<Pivot>
-}
-pub struct ShakeProfile {
-	idx: u32,
-	partitions: Vec<PartitionSeparator>
+	lower_pivots: Vec<Pivot>,
+	upper_pivots: Vec<Pivot>
+	// >:< total number of values accounted for in pivots should equal one less than the number of elements 
+		// (last pivot is not below or above any other pivots)
 }
 
-pub struct Output {
-	profile: ShakeProfile,
+pub struct ShakeProfile {
+	idx: u32,
 	separators: Vec<PartitionSeparator>,
 	elements: Vec<ShakeElement>
 }
@@ -45,18 +49,22 @@ pub struct Output {
 	// lowest unsorted index. If it is still within the bounds, use an adjacent index as the next partition????, if it is outside the bounds
 	// average the lowest and highest unsorted index to get the next partition
 // !!! is there a way of handling of adverse datasets?
-pub fn sort(values: &mut [IndexedVal]) -> Vec<ShakeElement> {
+pub fn sort(idx: u32, values: &mut [IndexedVal]) -> ShakeProfile {
 	
-    let mut output = initialize_output(&values);
-	partition(values, &mut output);
+    let mut elements = initialize_output(&values);
+	let separators = partition(values, &mut elements);
     bubble_sort(values);
 	
 	//record the positions of the variables after the swap
 	for i in 0..values.len() {
-		output[values[i].idx].sorted_loc = Some(i);
+		elements[values[i].idx].sorted_loc = Some(i);
 	}
     
-    return output;
+    return ShakeProfile {
+		idx: 0,
+		separators,
+		elements
+	};
 }
 
 // !!! make efficient / make better bubble sort (bigger variable length bubbles?)
@@ -82,7 +90,7 @@ fn initialize_output(vals: &[IndexedVal]) -> Vec<ShakeElement> {
         data.push( ShakeElement {
 			val: vals[idx].val, 
 			sorted_loc: None,
-			initial_loc: idx,
+			element_id: idx,
 			unsorted_locs: Vec::new()
 		});
     }
@@ -90,7 +98,7 @@ fn initialize_output(vals: &[IndexedVal]) -> Vec<ShakeElement> {
 	data
 }
 
-fn partition(values: &mut [IndexedVal], output: &mut Vec<ShakeElement>) {
+fn partition(values: &mut [IndexedVal], elements: &mut Vec<ShakeElement>) -> Vec<PartitionSeparator> {
 	
 	// !!! let mut helper_vec: Vec<IndexedVal> = Vec::with_capacity(values.len());
 		// !!! place values in second array or use only the same array as quick sort does?
@@ -100,15 +108,16 @@ fn partition(values: &mut [IndexedVal], output: &mut Vec<ShakeElement>) {
 	
 	
 	let mut partitions: Vec<PartitionSeparator> = Vec::with_capacity(values.len() / 2);
-	let mut partition = PartitionSeparator {
+	partitions.push(PartitionSeparator {
 		idx: 0,
 		lower_size: 0,
 		upper_size: values.len(),
-		pivots: Vec::new(),
-	};
+		lower_pivots: Vec::new(),
+		upper_pivots: Vec::new()
+	});
 	
 	let mut partition_idx: usize = 0;
-	
+	let mut partition = partitions[partition_idx].clone();
 	
 	//loop until all partitions are less than or equal to 3 in size
 	loop {
@@ -119,36 +128,42 @@ fn partition(values: &mut [IndexedVal], output: &mut Vec<ShakeElement>) {
 				
 				let mut lower_idx;
 				let mut upper_idx;
-				let mut num_higher;
-				let mut num_lower;
 				let mut pivot;
+				let mut pivot_data;
+				let pivots; // alias to the partition's pivot
 				
 				if half == 1 {
 					lower_idx = partition.idx - partition.lower_size;	//partition index - first half size
 					upper_idx = partition.idx - 1; //partition index - 1
+					pivots = &mut partition.lower_pivots;
 				} else {
 					lower_idx = partition.idx; // partion index
 					upper_idx = partition.idx + partition.upper_size - 1 ; // partition index - 1 + second half size
+					pivots = &mut partition.upper_pivots;
 				}
 				
-				// !!! whole pivot is copied to match test output, could be left in place. Also, storing val directly would be faster
+				pivot_data = Pivot {
+					element_id: values[lower_idx].idx,
+					num_previous: 0,
+					num_lower: 0,
+					num_higher: 0
+				};
 				pivot = values[lower_idx].clone();
 				lower_idx += 1;
 				
 				// compare to first element
-				// !!! make the first pivot a median of 3
 				if values[lower_idx].val >= pivot.val {
 					let temp = values[upper_idx].clone();
 					values[upper_idx] = values[lower_idx].clone();
 					values[lower_idx] = temp;
 					upper_idx -= 1;
-					num_higher = 1;
-					num_lower = 0;
+					pivot_data.num_higher = 1;
+					pivot_data.num_lower = 0;
 				} else {
 					values[lower_idx - 1] = values[lower_idx].clone();
 					lower_idx += 1;
-					num_higher = 0;
-					num_lower = 1;
+					pivot_data.num_higher = 0;
+					pivot_data.num_lower = 1;
 				}
 				
 				// split around a pivot. if the pivot is determined to be far from the center, switch pivot
@@ -159,82 +174,100 @@ fn partition(values: &mut [IndexedVal], output: &mut Vec<ShakeElement>) {
 					
 					if lower_idx == upper_idx {
 						// compare the last value before break
-						// pivot is always considered in lower partition
 						if values[upper_idx].val >= pivot.val {
 							upper_idx -= 1;
+							pivot_data.num_higher += 1;
 						} else {
 							values[lower_idx - 1] = values[lower_idx].clone();
 							lower_idx += 1;
+							pivot_data.num_lower += 1;
 						}
+						pivots.push(pivot_data);
 						
-						values[upper_idx] = pivot.clone(); // !!! put in opposite half of latest element for evening out short partitions
+						// pivot is always considered in lower partition
+							// !!! put in opposite half of latest element for evening out short partitions?
+						values[upper_idx] = pivot.clone(); 
 						break;
 					}
 					
+					// check if the first 2 elements fell on either side of the pivot. if not, change pivot and continue
 					// !!! for values equal to the pivot, should they go all the same way or on the side with fewer elements?
-					if num_higher == 1 {
+					if pivot_data.num_higher == 1 {
 						if values[lower_idx].val >= pivot.val {
 							values[lower_idx - 1] = pivot.clone();
 							pivot = values[lower_idx].clone();
 							lower_idx += 1;
-							num_lower = 1;
-							num_higher = 0; 
+							pivots.push(pivot_data.clone());
+							pivot_data.element_id = pivot.idx;
+							pivot_data.num_previous += 1;
+							pivot_data.num_lower = 1;
+							pivot_data.num_higher = 0; 
 							continue;
 						} else {
 							values[lower_idx - 1] = values[lower_idx].clone();
 							lower_idx += 1;
-							num_lower = 1;
-							num_higher = 1;
+							pivot_data.num_lower = 1;
+							pivot_data.num_higher = 1;
 						}
 					} else {
 						if values[upper_idx].val >= pivot.val {
 							upper_idx -= 1;
-							num_higher = 1;
-							num_lower = 1;
+							pivot_data.num_higher = 1;
+							pivot_data.num_lower = 1;
 						} else {
 							let temp = values[upper_idx].clone();
 							values[upper_idx] = pivot.clone();
 							pivot = temp;
 							upper_idx -= 1;
-							num_higher = 1;
-							num_lower = 0;
+							pivots.push(pivot_data.clone());
+							pivot_data.element_id = pivot.idx;
+							pivot_data.num_previous += 1;
+							pivot_data.num_higher = 1;
+							pivot_data.num_lower = 0;
 							continue;
 						}
 					}
 					
-					
+					// All subsequent checks for inequality will happen periodically. 
+					// Loop until there is a pivot change or the partition is sorted
 					loop {
 						if lower_idx == upper_idx {
 							break;
 						}
 						
-						if (num_lower + num_higher) % 3 == 0 {
-							if num_lower == (num_lower + num_higher) / 3 {
+						if (pivot_data.num_lower + pivot_data.num_higher) % 3 == 0 {
+							if pivot_data.num_lower == (pivot_data.num_lower + pivot_data.num_higher) / 3 {
 								if values[lower_idx].val >= pivot.val {
 									values[lower_idx - 1] = pivot.clone();
 									pivot = values[lower_idx].clone();
 									lower_idx += 1;
-									num_lower = 1;
-									num_higher = 0; 
+									pivots.push(pivot_data.clone());
+									pivot_data.element_id = pivot.idx;
+									pivot_data.num_previous += 1;
+									pivot_data.num_lower = 1;
+									pivot_data.num_higher = 0; 
 									break;
 								} else {
 									values[lower_idx - 1] = values[lower_idx].clone();
 									lower_idx += 1;
-									num_lower += 1;
+									pivot_data.num_lower += 1;
 									continue;
 								}
-							} else if num_higher == (num_lower + num_higher) / 3 {
+							} else if pivot_data.num_higher == (pivot_data.num_lower + pivot_data.num_higher) / 3 {
 								if values[upper_idx].val >= pivot.val {
 									upper_idx -= 1;
-									num_higher += 1;
+									pivot_data.num_higher += 1;
 									continue;
 								} else {
 									let temp = values[upper_idx].clone();
 									values[upper_idx] = pivot.clone();
 									pivot = temp;
 									upper_idx -= 1;
-									num_higher = 1;
-									num_lower = 0;
+									pivots.push(pivot_data.clone());
+									pivot_data.element_id = pivot.idx;
+									pivot_data.num_previous += 1;
+									pivot_data.num_higher = 1;
+									pivot_data.num_lower = 0;
 									break;
 								}
 							}
@@ -244,11 +277,11 @@ fn partition(values: &mut [IndexedVal], output: &mut Vec<ShakeElement>) {
 							values[upper_idx] = values[lower_idx].clone();
 							values[lower_idx] = temp;
 							upper_idx -= 1;
-							num_higher += 1;
+							pivot_data.num_higher += 1;
 						} else {
 							values[lower_idx - 1] = values[lower_idx].clone();
 							lower_idx += 1;
-							num_lower += 1;
+							pivot_data.num_lower += 1;
 						}
 					}
 					
@@ -271,29 +304,31 @@ fn partition(values: &mut [IndexedVal], output: &mut Vec<ShakeElement>) {
 				
 				// record the positions of the variables after the swap
 				for i in lower_idx - lower_size .. lower_idx + upper_size {
-					output[values[i].idx].unsorted_locs.push(i);
+					elements[values[i].idx].unsorted_locs.push(i);
 				}
 				
 				partitions.push( PartitionSeparator {
 					idx: lower_idx,
 					lower_size,
 					upper_size,
-					pivots: Vec::new(), // >:<
-				}); 
+					lower_pivots: Vec::new(),
+					upper_pivots: Vec::new()
+				});
 			
 			}
 		}
 		
-		
+		partition_idx += 1;
 		if partitions.len() == partition_idx {
 			break;
 		} else {
 			partition = partitions[partition_idx].clone();
-			partition_idx += 1;
 			continue;
 		}
 		
 	}
+	
+	return partitions;
 }
 
 //TESTS
