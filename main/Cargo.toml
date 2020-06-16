@@ -1,0 +1,14 @@
+[package]
+name = "main"
+version = "0.1.0"
+authors = ["gnodarse <gabenodarse@yahoo.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+war_sort = { path = "../war-sort" }
+types = { path = "../types" }
+shake_sort = { path = "../shake-sort" }
+rand = "0.7"
+sqlite = "0.25.0"

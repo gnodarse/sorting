@@ -9,37 +9,36 @@
 use types::IndexedVal;
 
 pub struct ShakeElement {
-	element_id: usize, // the element's initial location
-	val: i32, 
-	sorted_loc: Option<usize>,
-	unsorted_locs: Vec<usize>, //After 1 swap is at index 0, after 2 at 1...
+	pub element_id: usize, // the element's initial location
+	pub val: i32, 
+	pub sorted_loc: Option<usize>,
+	pub unsorted_locs: Vec<usize>, //After 1 swap is at index 0, after 2 at 1...
 }
 
 // stores a pivot of a partition
 	// records how many elements were placed above/below the pivot before the pivot changed or the partition was fully sub-partitioned
 #[derive(Clone)]
 pub struct Pivot {
-	element_id: usize,
-	num_previous: usize, // how many pivots came previously when sorting the partition
-	num_lower: usize,
-	num_higher: usize
+	pub element_id: usize,
+	pub num_previous: usize, // how many pivots came previously when sorting the partition
+	pub num_lower: usize,
+	pub num_higher: usize
 }
 
 #[derive(Clone)]
 pub struct PartitionSeparator {
-	idx: usize,
-	lower_size: usize,
-	upper_size: usize,
-	lower_pivots: Vec<Pivot>,
-	upper_pivots: Vec<Pivot>
+	pub idx: usize,
+	pub lower_size: usize,
+	pub upper_size: usize,
+	pub pivots: Vec<Pivot>,
 	// >:< total number of values accounted for in pivots should equal one less than the number of elements 
 		// (last pivot is not below or above any other pivots)
 }
 
 pub struct ShakeProfile {
-	idx: u32,
-	separators: Vec<PartitionSeparator>,
-	elements: Vec<ShakeElement>
+	pub id: u32,
+	pub separators: Vec<PartitionSeparator>,
+	pub elements: Vec<ShakeElement>
 }
 
 // !!! create tests to make sure output is correct
@@ -49,7 +48,7 @@ pub struct ShakeProfile {
 	// lowest unsorted index. If it is still within the bounds, use an adjacent index as the next partition????, if it is outside the bounds
 	// average the lowest and highest unsorted index to get the next partition
 // !!! is there a way of handling of adverse datasets?
-pub fn sort(idx: u32, values: &mut [IndexedVal]) -> ShakeProfile {
+pub fn sort(id: u32, values: &mut [IndexedVal]) -> ShakeProfile {
 	
     let mut elements = initialize_output(&values);
 	let separators = partition(values, &mut elements);
@@ -61,7 +60,7 @@ pub fn sort(idx: u32, values: &mut [IndexedVal]) -> ShakeProfile {
 	}
     
     return ShakeProfile {
-		idx: 0,
+		id,
 		separators,
 		elements
 	};
@@ -112,8 +111,7 @@ fn partition(values: &mut [IndexedVal], elements: &mut Vec<ShakeElement>) -> Vec
 		idx: 0,
 		lower_size: 0,
 		upper_size: values.len(),
-		lower_pivots: Vec::new(),
-		upper_pivots: Vec::new()
+		pivots: Vec::new(),
 	});
 	
 	let mut partition_idx: usize = 0;
@@ -130,16 +128,14 @@ fn partition(values: &mut [IndexedVal], elements: &mut Vec<ShakeElement>) -> Vec
 				let mut upper_idx;
 				let mut pivot;
 				let mut pivot_data;
-				let pivots; // alias to the partition's pivot
+				let mut pivots = Vec::new();
 				
 				if half == 1 {
 					lower_idx = partition.idx - partition.lower_size;	//partition index - first half size
 					upper_idx = partition.idx - 1; //partition index - 1
-					pivots = &mut partition.lower_pivots;
 				} else {
 					lower_idx = partition.idx; // partion index
 					upper_idx = partition.idx + partition.upper_size - 1 ; // partition index - 1 + second half size
-					pivots = &mut partition.upper_pivots;
 				}
 				
 				pivot_data = Pivot {
@@ -311,8 +307,7 @@ fn partition(values: &mut [IndexedVal], elements: &mut Vec<ShakeElement>) -> Vec
 					idx: lower_idx,
 					lower_size,
 					upper_size,
-					lower_pivots: Vec::new(),
-					upper_pivots: Vec::new()
+					pivots,
 				});
 			
 			}
